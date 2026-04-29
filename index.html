@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>实验室耗材出入库管理系统</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f7fa; color: #333; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 12px; margin-bottom: 24px; }
+        header h1 { font-size: 24px; margin-bottom: 20px; }
+        .header-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
+        .stats { display: flex; gap: 20px; flex-wrap: wrap; }
+        .stat-card { background: rgba(255,255,255,0.2); padding: 16px 24px; border-radius: 8px; min-width: 120px; }
+        .stat-num { display: block; font-size: 28px; font-weight: bold; }
+        .stat-label { font-size: 14px; opacity: 0.9; }
+        .tabs { display: flex; gap: 8px; margin-bottom: 20px; background: white; padding: 8px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .tab-btn { padding: 10px 24px; border: none; background: transparent; cursor: pointer; border-radius: 6px; font-size: 15px; color: #666; transition: all 0.2s; }
+        .tab-btn:hover { background: #f5f7fa; }
+        .tab-btn.active { background: #667eea; color: white; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .toolbar { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+        .toolbar input, .toolbar select { padding: 10px 14px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; outline: none; }
+        .toolbar input:focus, .toolbar select:focus { border-color: #667eea; }
+        #search-input { flex: 1; min-width: 200px; }
+        .btn { padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; transition: all 0.2s; }
+        .btn-primary { background: #667eea; color: white; }
+        .btn-danger { background: #e74c3c; color: white; }
+        .btn-success { background: #27ae60; color: white; }
+        .btn-secondary { background: #6c757d; color: white; }
+        .btn-sm { padding: 6px 12px; font-size: 12px; }
+        .table-responsive { background: white; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 14px 16px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #f8f9fa; font-weight: 600; color: #666; font-size: 14px; }
+        tr:hover { background: #f8f9fa; }
+        .low-stock { color: #e74c3c; font-weight: bold; }
+        .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center; padding: 20px; }
+        .modal.active { display: flex; }
+        .modal-content { background: white; border-radius: 12px; padding: 28px; width: 100%; max-width: 480px; animation: slideUp 0.3s ease; }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        .modal-content h3 { margin-bottom: 20px; font-size: 18px; }
+        .form-group { margin-bottom: 16px; }
+        .form-group label { display: block; margin-bottom: 6px; font-size: 14px; color: #555; font-weight: 500; }
+        .form-group input, .form-group textarea, .form-group select { width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; outline: none; font-family: inherit; }
+        .form-group input:focus, .form-group textarea:focus { border-color: #667eea; }
+        .form-row { display: flex; gap: 12px; }
+        .form-row .form-group { flex: 1; }
+        .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px; }
+        .tag { display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 500; }
+        .tag-in { background: #d4edda; color: #155724; }
+        .tag-out { background: #f8d7da; color: #721c24; }
+        .empty-state { text-align: center; padding: 60px 20px; color: #999; }
+        #file-input { display: none; }
+        @media (max-width: 768px) { .stats { flex-direction: column; } .form-row { flex-direction: column; } .actions { flex-direction: column; } .header-actions { flex-direction: column; } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>实验室耗材出入库管理系统</h1>
+            <div class="header-actions">
+                <button class="btn btn-secondary" onclick="exportData()">导出数据</button>
+                <label class="btn btn-secondary" for="file-input">导入数据</label>
+                <input type="file" id="file-input" accept=".json,.xlsx,.xls" onchange="importData(event)">
+                <button class="btn btn-danger" onclick="clearAllData()" style="margin-left: auto;">清空数据</button>
+            </div>
+            <div class="stats">
+                <div class="stat-card"><span class="stat-num" id="stat-total">0</span><span class="stat-label">耗材种类</span></div>
+                <div class="stat-card"><span class="stat-num" id="stat-qty">0</span><span class="stat-label">总库存量</span></div>
+                <div class="stat-card"><span class="stat-num" id="stat-low">0</span><span class="stat-label">库存不足</span></div>
+            </div>
+        </header>
+
+        <nav class="tabs">
+            <button class="tab-btn active" data-tab="inventory">库存管理</button>
+            <button class="tab-btn" data-tab="records">出入库记录</button>
+        </nav>
+
+        <section id="inventory-tab" class="tab-content active">
+            <div class="toolbar">
+                <input type="text" id="search-input" placeholder="搜索耗材名称...">
+                <button class="btn btn-primary" onclick="openItemModal()">+ 新增耗材</button>
+            </div>
+            <div class="table-responsive">
+                <table id="items-table">
+                    <thead>
+                        <tr><th>名称</th><th>分类</th><th>规格</th><th>单位</th><th>库存</th><th>存放位置</th><th>操作</th></tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section id="records-tab" class="tab-content">
+            <div class="toolbar">
+                <select id="filter-item">
+                    <option value="">全部耗材</option>
+                </select>
+                <button class="btn btn-secondary" onclick="exportRecords()">导出记录</button>
+            </div>
+            <div class="table-responsive">
+                <table id="records-table">
+                    <thead>
+                        <tr><th>类型</th><th>耗材名称</th><th>数量</th><th>操作人</th><th>详情</th><th>备注</th><th>时间</th></tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <div class="modal" id="item-modal">
+        <div class="modal-content">
+            <h3 id="item-modal-title">新增耗材</h3>
+            <form id="item-form" onsubmit="saveItem(event)">
+                <input type="hidden" id="item-id">
+                <div class="form-group"><label>名称 *</label><input type="text" id="item-name" required></div>
+                <div class="form-row">
+                    <div class="form-group"><label>分类</label><input type="text" id="item-category" placeholder="如：试剂、耗材、器材"></div>
+                    <div class="form-group"><label>规格</label><input type="text" id="item-spec" placeholder="如：500ml"></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group"><label>单位</label><input type="text" id="item-unit" placeholder="如：瓶、个、盒"></div>
+                    <div class="form-group"><label>最低库存预警</label><input type="number" id="item-min" value="0"></div>
+                </div>
+                <div class="form-group"><label>存放位置</label><input type="text" id="item-location" placeholder="如：A区3号柜"></div>
+                <div class="form-group"><label>备注</label><textarea id="item-remark" rows="2"></textarea></div>
+                <div class="modal-actions">
+                    <button type="button" class="btn" onclick="closeModal('item-modal')">取消</button>
+                    <button type="submit" class="btn btn-primary">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="modal" id="in-modal">
+        <div class="modal-content">
+            <h3>入库操作</h3>
+            <form id="in-form" onsubmit="stockIn(event)">
+                <input type="hidden" id="in-item-id">
+                <div class="form-group"><label>耗材名称</label><input type="text" id="in-item-name" readonly></div>
+                <div class="form-row">
+                    <div class="form-group"><label>入库数量 *</label><input type="number" id="in-qty" required min="1"></div>
+                    <div class="form-group"><label>操作人</label><input type="text" id="in-operator" placeholder="姓名"></div>
+                </div>
+                <div class="form-group"><label>供应商</label><input type="text" id="in-supplier"></div>
+                <div class="form-group"><label>备注</label><textarea id="in-remark" rows="2"></textarea></div>
+                <div class="modal-actions">
+                    <button type="button" class="btn" onclick="closeModal('in-modal')">取消</button>
+                    <button type="submit" class="btn btn-primary">确认入库</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="modal" id="out-modal">
+        <div class="modal-content">
+            <h3>出库操作</h3>
+            <form id="out-form" onsubmit="stockOut(event)">
+                <input type="hidden" id="out-item-id">
+                <div class="form-group"><label>耗材名称</label><input type="text" id="out-item-name" readonly></div>
+                <div class="form-row">
+                    <div class="form-group"><label>出库数量 *</label><input type="number" id="out-qty" required min="1"></div>
+                    <div class="form-group"><label>操作人</label><input type="text" id="out-operator" placeholder="姓名"></div>
+                </div>
+                <div class="form-group"><label>用途</label><input type="text" id="out-purpose" placeholder="如：实验课使用"></div>
+                <div class="form-group"><label>备注</label><textarea id="out-remark" rows="2"></textarea></div>
+                <div class="modal-actions">
+                    <button type="button" class="btn" onclick="closeModal('out-modal')">取消</button>
+                    <button type="submit" class="btn btn-danger">确认出库</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const STORAGE_KEY = 'lab_inventory_data';
+        let data = { items: [], records: [] };
+
+        function loadData() {
+            const stored = localStorage.getItem(STORAGE_KEY);
+            if (stored) {
+                data = JSON.parse(stored);
+            }
+        }
+
+        function saveData() {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        }
+
+        function formatDate(date) {
+            return date.toLocaleString('zh-CN');
+        }
+
+        function updateStats() {
+            const total = data.items.length;
+            const totalQty = data.items.reduce((sum, item) => sum + (item.quantity || 0), 0);
+            const low = data.items.filter(item => (item.quantity || 0) <= (item.min_stock || 0)).length;
+            document.getElementById('stat-total').textContent = total;
+            document.getElementById('stat-qty').textContent = totalQty;
+            document.getElementById('stat-low').textContent = low;
+        }
+
+        function renderItems(filteredItems = data.items) {
+            const tbody = document.querySelector('#items-table tbody');
+            if (!filteredItems.length) {
+                tbody.innerHTML = '<tr><td colspan="7" class="empty-state">暂无耗材数据，点击"新增耗材"添加</td></tr>';
+                return;
+            }
+            tbody.innerHTML = filteredItems.map(item => {
+                const lowClass = (item.quantity || 0) <= (item.min_stock || 0) ? 'low-stock' : '';
+                return `<tr>
+                    <td>${item.name}</td>
+                    <td>${item.category || '-'}</td>
+                    <td>${item.specification || '-'}</td>
+                    <td>${item.unit || '-'}</td>
+                    <td class="${lowClass}">${item.quantity || 0}</td>
+                    <td>${item.location || '-'}</td>
+                    <td class="actions">
+                        <button class="btn btn-success btn-sm" onclick="openInModal(${item.id}, '${item.name}')">入库</button>
+                        <button class="btn btn-danger btn-sm" onclick="openOutModal(${item.id}, '${item.name}')">出库</button>
+                        <button class="btn btn-sm" onclick="openItemModal(${item.id})">编辑</button>
+                    </td>
+                </tr>`;
+            }).join('');
+        }
+
+        function updateItemSelect() {
+            const select = document.getElementById('filter-item');
+            select.innerHTML = '<option value="">全部耗材</option>' +
+                data.items.map(i => `<option value="${i.id}">${i.name}</option>`).join('');
+        }
+
+        function renderRecords(filterItemId = '') {
+            const tbody = document.querySelector('#records-table tbody');
+            let filteredRecords = data.records;
+            if (filterItemId) {
+                filteredRecords = data.records.filter(r => r.item_id == filterItemId);
+            }
+            if (!filteredRecords.length) {
+                tbody.innerHTML = '<tr><td colspan="7" class="empty-state">暂无出入库记录</td></tr>';
+                return;
+            }
+            tbody.innerHTML = filteredRecords.map(r => {
+                const item = data.items.find(i => i.id === r.item_id);
+                const itemName = item ? item.name : '未知';
+                const tagClass = r.type === '入库' ? 'tag-in' : 'tag-out';
+                return `<tr>
+                    <td><span class="tag ${tagClass}">${r.type}</span></td>
+                    <td>${itemName}</td>
+                    <td>${r.quantity}</td>
+                    <td>${r.operator || '-'}</td>
+                    <td>${r.detail || '-'}</td>
+                    <td>${r.remark || '-'}</td>
+                    <td>${formatDate(new Date(r.created_at))}</td>
+                </tr>`;
+            }).join('');
+        }
+
+        function openItemModal(itemId = null) {
+            const modal = document.getElementById('item-modal');
+            const title = document.getElementById('item-modal-title');
+            document.getElementById('item-form').reset();
+            document.getElementById('item-id').value = '';
+            if (itemId) {
+                const item = data.items.find(i => i.id === itemId);
+                if (item) {
+                    title.textContent = '编辑耗材';
+                    document.getElementById('item-id').value = item.id;
+                    document.getElementById('item-name').value = item.name;
+                    document.getElementById('item-category').value = item.category || '';
+                    document.getElementById('item-spec').value = item.specification || '';
+                    document.getElementById('item-unit').value = item.unit || '';
+                    document.getElementById('item-min').value = item.min_stock || 0;
+                    document.getElementById('item-location').value = item.location || '';
+                    document.getElementById('item-remark').value = item.remark || '';
+                }
+            } else {
+                title.textContent = '新增耗材';
+            }
+            modal.classList.add('active');
+        }
+
+        function openInModal(itemId, itemName) {
+            document.getElementById('in-form').reset();
+            document.getElementById('in-item-id').value = itemId;
+            document.getElementById('in-item-name').value = itemName;
+            document.getElementById('in-modal').classList.add('active');
+        }
+
+        function openOutModal(itemId, itemName) {
+            document.getElementById('out-form').reset();
+            document.getElementById('out-item-id').value = itemId;
+            document.getElementById('out-item-name').value = itemName;
+            document.getElementById('out-modal').classList.add('active');
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.remove('active');
+        }
+
+        function saveItem(e) {
+            e.preventDefault();
+            const id = parseInt(document.getElementById('item-id').value);
+            const itemData = {
+                id: id || Date.now(),
+                name: document.getElementById('item-name').value,
+                category: document.getElementById('item-category').value,
+                specification: document.getElementById('item-spec').value,
+                unit: document.getElementById('item-unit').value,
+                min_stock: parseInt(document.getElementById('item-min').value) || 0,
+                location: document.getElementById('item-location').value,
+                remark: document.getElementById('item-remark').value
+            };
+            if (id) {
+                const index = data.items.findIndex(i => i.id === id);
+                if (index > -1) {
+                    data.items[index] = { ...data.items[index], ...itemData };
+                }
+            } else {
+                itemData.quantity = 0;
+                data.items.push(itemData);
+            }
+            saveData();
+            closeModal('item-modal');
+            renderItems();
+            updateItemSelect();
+            updateStats();
+        }
+
+        function stockIn(e) {
+            e.preventDefault();
+            const itemId = parseInt(document.getElementById('in-item-id').value);
+            const quantity = parseInt(document.getElementById('in-qty').value);
+            const item = data.items.find(i => i.id === itemId);
+            if (item) {
+                item.quantity = (item.quantity || 0) + quantity;
+            }
+            data.records.push({
+                id: Date.now(),
+                item_id: itemId,
+                type: '入库',
+                quantity: quantity,
+                operator: document.getElementById('in-operator').value,
+                detail: document.getElementById('in-supplier').value,
+                remark: document.getElementById('in-remark').value,
+                created_at: new Date()
+            });
+            saveData();
+            closeModal('in-modal');
+            renderItems();
+            renderRecords();
+            updateStats();
+        }
+
+        function stockOut(e) {
+            e.preventDefault();
+            const itemId = parseInt(document.getElementById('out-item-id').value);
+            const quantity = parseInt(document.getElementById('out-qty').value);
+            const item = data.items.find(i => i.id === itemId);
+            if (!item || (item.quantity || 0) < quantity) {
+                alert('库存不足，无法出库');
+                return;
+            }
+            item.quantity = item.quantity - quantity;
+            data.records.push({
+                id: Date.now(),
+                item_id: itemId,
+                type: '出库',
+                quantity: quantity,
+                operator: document.getElementById('out-operator').value,
+                detail: document.getElementById('out-purpose').value,
+                remark: document.getElementById('out-remark').value,
+                created_at: new Date()
+            });
+            saveData();
+            closeModal('out-modal');
+            renderItems();
+            renderRecords();
+            updateStats();
+        }
+
+        function exportData() {
+            const exportData = {
+                items: data.items,
+                records: data.records,
+                exportTime: new Date().toLocaleString('zh-CN')
+            };
+            const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `lab_inventory_${new Date().toISOString().split('T')[0]}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            alert('数据导出成功！');
+        }
+
+        function exportRecords() {
+            const recordsWithName = data.records.map(r => {
+                const item = data.items.find(i => i.id === r.item_id);
+                return {
+                    类型: r.type,
+                    耗材名称: item ? item.name : '未知',
+                    数量: r.quantity,
+                    操作人: r.operator || '-',
+                    详情: r.detail || '-',
+                    备注: r.remark || '-',
+                    时间: formatDate(new Date(r.created_at))
+                };
+            });
+            const worksheet = XLSX.utils.json_to_sheet(recordsWithName);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, '出入库记录');
+            XLSX.writeFile(workbook, `出入库记录_${new Date().toISOString().split('T')[0]}.xlsx`);
+        }
+
+        function importData(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const imported = JSON.parse(e.target.result);
+                    if (imported.items) data.items = imported.items;
+                    if (imported.records) data.records = imported.records;
+                    saveData();
+                    renderItems();
+                    updateItemSelect();
+                    renderRecords();
+                    updateStats();
+                    alert('数据导入成功！');
+                } catch {
+                    alert('导入失败：文件格式不正确');
+                }
+            };
+            reader.readAsText(file);
+            event.target.value = '';
+        }
+
+        function clearAllData() {
+            if (confirm('确定要清空所有数据吗？此操作不可恢复！')) {
+                data = { items: [], records: [] };
+                saveData();
+                renderItems();
+                updateItemSelect();
+                renderRecords();
+                updateStats();
+                alert('数据已清空');
+            }
+        }
+
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                btn.classList.add('active');
+                document.getElementById(btn.dataset.tab + '-tab').classList.add('active');
+                if (btn.dataset.tab === 'records') {
+                    renderRecords(document.getElementById('filter-item').value);
+                }
+            });
+        });
+
+        document.getElementById('search-input').addEventListener('input', (e) => {
+            const kw = e.target.value.trim().toLowerCase();
+            const filtered = data.items.filter(i => i.name.toLowerCase().includes(kw));
+            renderItems(filtered);
+        });
+
+        document.getElementById('filter-item').addEventListener('change', (e) => {
+            renderRecords(e.target.value);
+        });
+
+        document.querySelectorAll('.modal').forEach(m => {
+            m.addEventListener('click', (e) => {
+                if (e.target === m) closeModal(m.id);
+            });
+        });
+
+        loadData();
+        renderItems();
+        updateItemSelect();
+        renderRecords();
+        updateStats();
+    </script>
+</body>
+</html>
